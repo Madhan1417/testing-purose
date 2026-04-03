@@ -10,14 +10,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Public EC2
+      - name: Get GitHub Actions public IP
+        id: ip
+        uses: haythem/public-ip@v1.3
+
+      - name: Add IP to Security Group
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.SG_ID }} \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_IP }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/testing-purose
             cd /home/ubuntu/testing-purose
             git fetch origin
             git reset --hard origin/master
@@ -25,3 +40,16 @@ jobs:
             pm2 start /home/ubuntu/testing-purose/backend/app.js --name app
             sudo systemctl restart nginx
             echo "Deployed successfully!"
+
+      - name: Remove IP from Security Group
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.SG_ID }} \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
