@@ -15,19 +15,20 @@ jobs:
         run: |
           if [ "${{ github.ref_name }}" == "master" ]; then
             echo "EC2_HOST=${{ secrets.EC2_IP }}" >> $GITHUB_ENV
+            echo "EC2_USER=${{ secrets.EC2_USER }}" >> $GITHUB_ENV
+            echo "EC2_KEY=${{ secrets.EC2_SSH_KEY }}" >> $GITHUB_ENV
             echo "DEPLOY_PATH=/home/ubuntu/testing-purose" >> $GITHUB_ENV
-            echo "PM2_APP=app" >> $GITHUB_ENV
             echo "BRANCH=master" >> $GITHUB_ENV
-
-          elif [ "${{ github.ref_name }}" == "qa" ]; then
-            echo "EC2_HOST=${{ secrets.QA_EC2_IP }}" >> $GITHUB_ENV
-            echo "DEPLOY_PATH=/home/ubuntu/testing-purose-qa" >> $GITHUB_ENV
-            echo "PM2_APP=qa-app" >> $GITHUB_ENV
-            echo "BRANCH=qa" >> $GITHUB_ENV
-
+            echo "PM2_APP=app" >> $GITHUB_ENV
+            echo "SG=${{ secrets.SG_ID }}" >> $GITHUB_ENV
           else
-            echo "Branch not allowed for deployment"
-            exit 1
+            echo "EC2_HOST=${{ secrets.QA_EC2_IP }}" >> $GITHUB_ENV
+            echo "EC2_USER=${{ secrets.QA_EC2_USER }}" >> $GITHUB_ENV
+            echo "EC2_KEY=${{ secrets.QA_EC2_SSH_KEY }}" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/home/ubuntu/testing-purose" >> $GITHUB_ENV
+            echo "BRANCH=qa" >> $GITHUB_ENV
+            echo "PM2_APP=qa-app" >> $GITHUB_ENV
+            echo "SG=${{ secrets.QA_SG_ID }}" >> $GITHUB_ENV
           fi
 
       - name: Get GitHub IP and Open Firewall
@@ -36,7 +37,7 @@ jobs:
           echo "GITHUB_IP=$GITHUB_IP" >> $GITHUB_ENV
           echo "Opening firewall for $GITHUB_IP"
           aws ec2 authorize-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
+            --group-id "${{ env.SG }}" \
             --protocol tcp \
             --port 22 \
             --cidr ${GITHUB_IP}/32 || true
@@ -49,33 +50,28 @@ jobs:
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ${{ env.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             export PATH=$PATH:/usr/local/bin
-
             cd ${{ env.DEPLOY_PATH }}
             git fetch origin
             git reset --hard origin/${{ env.BRANCH }}
-
             sudo chown -R ubuntu:ubuntu ${{ env.DEPLOY_PATH }}
-
             pm2 stop ${{ env.PM2_APP }} || true
             pm2 start ${{ env.DEPLOY_PATH }}/backend/app.js --name ${{ env.PM2_APP }}
             pm2 save
-
             sudo systemctl restart nginx
-
-            echo "Deployed to ${{ env.BRANCH }} successfully!"
+            echo "${{ env.BRANCH }} deployed successfully!"
 
       - name: Remove IP from Firewall
         if: always()
         run: |
           echo "Closing firewall for $GITHUB_IP"
           aws ec2 revoke-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
+            --group-id "${{ env.SG }}" \
             --protocol tcp \
             --port 22 \
             --cidr ${GITHUB_IP}/32 || true
