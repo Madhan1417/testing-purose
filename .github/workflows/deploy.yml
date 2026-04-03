@@ -18,11 +18,16 @@ jobs:
             echo "DEPLOY_PATH=/home/ubuntu/testing-purose" >> $GITHUB_ENV
             echo "PM2_APP=app" >> $GITHUB_ENV
             echo "BRANCH=master" >> $GITHUB_ENV
-          else
+
+          elif [ "${{ github.ref_name }}" == "qa" ]; then
             echo "EC2_HOST=${{ secrets.QA_EC2_IP }}" >> $GITHUB_ENV
             echo "DEPLOY_PATH=/home/ubuntu/testing-purose-qa" >> $GITHUB_ENV
             echo "PM2_APP=qa-app" >> $GITHUB_ENV
             echo "BRANCH=qa" >> $GITHUB_ENV
+
+          else
+            echo "Branch not allowed for deployment"
+            exit 1
           fi
 
       - name: Get GitHub IP and Open Firewall
@@ -50,14 +55,19 @@ jobs:
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             export PATH=$PATH:/usr/local/bin
+
             cd ${{ env.DEPLOY_PATH }}
             git fetch origin
             git reset --hard origin/${{ env.BRANCH }}
+
             sudo chown -R ubuntu:ubuntu ${{ env.DEPLOY_PATH }}
+
             pm2 stop ${{ env.PM2_APP }} || true
             pm2 start ${{ env.DEPLOY_PATH }}/backend/app.js --name ${{ env.PM2_APP }}
             pm2 save
+
             sudo systemctl restart nginx
+
             echo "Deployed to ${{ env.BRANCH }} successfully!"
 
       - name: Remove IP from Firewall
