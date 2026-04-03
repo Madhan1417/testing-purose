@@ -223,19 +223,38 @@ Go to **GitHub repo → Settings → Secrets and variables → Actions** and add
 
 Triggers on every push to master branch.
 
-```yaml
 name: Deploy to EC2
 
 on:
   push:
     branches:
       - master
+      - qa
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Set Environment Variables
+        run: |
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            echo "EC2_HOST=${{ secrets.EC2_IP }}" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/home/ubuntu/testing-purose" >> $GITHUB_ENV
+            echo "PM2_APP=app" >> $GITHUB_ENV
+            echo "BRANCH=master" >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "qa" ]; then
+            echo "EC2_HOST=${{ secrets.QA_EC2_IP }}" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/home/ubuntu/testing-purose-qa" >> $GITHUB_ENV
+            echo "PM2_APP=qa-app" >> $GITHUB_ENV
+            echo "BRANCH=qa" >> $GITHUB_ENV
+
+          else
+            echo "Branch not allowed for deployment"
+            exit 1
+          fi
+
       - name: Get GitHub IP and Open Firewall
         run: |
           GITHUB_IP=$(curl -s https://api.ipify.org)
@@ -254,22 +273,27 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.EC2_IP }}
+          host: ${{ env.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             export PATH=$PATH:/usr/local/bin
-            cd /home/ubuntu/testing-purose
+
+            cd ${{ env.DEPLOY_PATH }}
             git fetch origin
-            git reset --hard origin/master
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/testing-purose
-            pm2 stop app || true
-            pm2 start /home/ubuntu/testing-purose/backend/app.js --name app
+            git reset --hard origin/${{ env.BRANCH }}
+
+            sudo chown -R ubuntu:ubuntu ${{ env.DEPLOY_PATH }}
+
+            pm2 stop ${{ env.PM2_APP }} || true
+            pm2 start ${{ env.DEPLOY_PATH }}/backend/app.js --name ${{ env.PM2_APP }}
             pm2 save
+
             sudo systemctl restart nginx
-            echo "Deployed successfully!"
+
+            echo "Deployed to ${{ env.BRANCH }} successfully!"
 
       - name: Remove IP from Firewall
         if: always()
@@ -284,301 +308,3 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-```
-
----
-
-### Frontend Workflow — frontend.yml
-
-Triggers only when frontend files change.
-
-```yaml
-name: Deploy Frontend
-
-on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'frontend/**'
-
-jobs:
-  deploy-frontend:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Get GitHub IP and Open Firewall
-        run: |
-          GITHUB_IP=$(curl -s https://api.ipify.org)
-          echo "GITHUB_IP=$GITHUB_IP" >> $GITHUB_ENV
-          echo "Opening firewall for $GITHUB_IP"
-          aws ec2 authorize-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy Frontend to EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_IP }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            export PATH=$PATH:/usr/local/bin
-            cd /home/ubuntu/testing-purose
-            git fetch origin
-            git reset --hard origin/master
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/testing-purose/frontend
-            sudo chmod 755 /home/ubuntu/testing-purose/frontend
-            sudo chmod 644 /home/ubuntu/testing-purose/frontend/index.html
-            sudo systemctl restart nginx
-            echo "Frontend deployed successfully!"
-
-      - name: Remove IP from Firewall
-        if: always()
-        run: |
-          echo "Closing firewall for $GITHUB_IP"
-          aws ec2 revoke-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-```
-
----
-
-### Backend Workflow — backend.yml
-
-Triggers only when backend files change.
-
-```yaml
-name: Deploy Backend
-
-on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'backend/**'
-
-jobs:
-  deploy-backend:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Get GitHub IP and Open Firewall
-        run: |
-          GITHUB_IP=$(curl -s https://api.ipify.org)
-          echo "GITHUB_IP=$GITHUB_IP" >> $GITHUB_ENV
-          echo "Opening firewall for $GITHUB_IP"
-          aws ec2 authorize-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy Backend to EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_IP }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            export PATH=$PATH:/usr/local/bin
-            cd /home/ubuntu/testing-purose
-            git fetch origin
-            git reset --hard origin/master
-            sudo chown -R ubuntu:ubuntu /home/ubuntu/testing-purose/backend
-            pm2 stop app || true
-            pm2 start /home/ubuntu/testing-purose/backend/app.js --name app
-            pm2 save
-            echo "Backend deployed successfully!"
-
-      - name: Remove IP from Firewall
-        if: always()
-        run: |
-          echo "Closing firewall for $GITHUB_IP"
-          aws ec2 revoke-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-```
-
----
-
-## Secure SSH Access
-
-Port 22 is always closed. It only opens temporarily during GitHub Actions deployment.
-
-How it works:
-
-1. Workflow starts and gets GitHub Actions current public IP
-2. Adds that IP to EC2 Security Group port 22
-3. SSHs into EC2 and deploys the code
-4. Removes that IP from Security Group immediately after
-5. Port 22 is closed again
-
-This means no one can SSH into your EC2 except during an active deployment. ✅
-
----
-
-## QA Branch Setup
-
-### Create QA Branch
-
-On GitHub, create a new branch called `qa` from master.
-
-### Clone QA branch on EC2
-
-```bash
-cd /home/ubuntu
-git clone -b qa https://github.com/Madhan1417/testing-purose.git testing-purose-qa
-```
-
-### Update Nginx for QA
-
-```bash
-sudo nano /etc/nginx/sites-available/default
-```
-
-Add QA paths:
-
-```nginx
-server {
-    listen 80;
-
-    # Production Frontend
-    location / {
-        root /home/ubuntu/testing-purose/frontend;
-        index index.html;
-    }
-
-    # Production Backend
-    location /backend/ {
-        proxy_pass http://localhost:3000/;
-    }
-
-    # QA Frontend
-    location /qa/ {
-        root /home/ubuntu/testing-purose-qa/frontend;
-        index index.html;
-    }
-
-    # QA Backend
-    location /qa-backend/ {
-        proxy_pass http://localhost:3001/;
-    }
-}
-```
-
-### Start QA Backend
-
-```bash
-pm2 start /home/ubuntu/testing-purose-qa/backend/app.js --name qa-app -- --port 3001
-pm2 save
-```
-
-### QA Workflow — qa-deploy.yml
-
-```yaml
-name: Deploy QA
-
-on:
-  push:
-    branches:
-      - qa
-
-jobs:
-  deploy-qa:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Get GitHub IP and Open Firewall
-        run: |
-          GITHUB_IP=$(curl -s https://api.ipify.org)
-          echo "GITHUB_IP=$GITHUB_IP" >> $GITHUB_ENV
-          echo "Opening firewall for $GITHUB_IP"
-          aws ec2 authorize-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy to QA
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.QA_EC2_IP }}
-          username: ${{ secrets.QA_EC2_USER }}
-          key: ${{ secrets.QA_EC2_SSH_KEY }}
-          script: |
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            export PATH=$PATH:/usr/local/bin
-            cd /home/ubuntu/testing-purose-qa
-            git fetch origin
-            git reset --hard origin/qa
-            pm2 stop qa-app || true
-            pm2 start /home/ubuntu/testing-purose-qa/backend/app.js --name qa-app
-            pm2 save
-            sudo systemctl restart nginx
-            echo "QA Deployed successfully!"
-
-      - name: Remove IP from Firewall
-        if: always()
-        run: |
-          echo "Closing firewall for $GITHUB_IP"
-          aws ec2 revoke-security-group-ingress \
-            --group-id "${{ secrets.SG_ID }}" \
-            --protocol tcp \
-            --port 22 \
-            --cidr ${GITHUB_IP}/32 || true
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-```
-
----
-
-## Final Flow
-
-```
-Push to master → GitHub Actions triggers → deploys to Production EC2 ✅
-Push to qa     → GitHub Actions triggers → deploys to QA EC2 ✅
-Port 22        → always closed, opens only during deployment ✅
-```
-
-## Access URLs
-
-| URL | Environment |
-|-----|-------------|
-| http://your-ec2-ip/ | Production Frontend |
-| http://your-ec2-ip/backend/ | Production Backend |
-| http://your-ec2-ip/qa/ | QA Frontend |
-| http://your-ec2-ip/qa-backend/ | QA Backend |
