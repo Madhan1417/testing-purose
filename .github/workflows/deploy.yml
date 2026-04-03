@@ -16,11 +16,15 @@ jobs:
           host: ${{ secrets.EC2_IP }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          request_pty: true
           script: |
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/testing-purose
             cd /home/ubuntu/testing-purose
             git fetch origin
             git reset --hard origin/master
             pkill -f "node app.js" || true
-            nohup node /home/ubuntu/testing-purose/backend/app.js &
+            sleep 1
+            nohup node /home/ubuntu/testing-purose/backend/app.js > /home/ubuntu/testing-purose/backend/nohup.out 2>&1 &
+            disown
             sudo systemctl restart nginx
             echo "Deployed successfully!"
