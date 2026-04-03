@@ -12,17 +12,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get GitHub Actions public IP
-        id: ip
-        uses: haythem/public-ip@v1.3
-
-      - name: Add IP to Security Group
+      - name: Get GitHub IP and Open Firewall
         run: |
+          GITHUB_IP=$(curl -s https://api.ipify.org)
+          echo "GITHUB_IP=$GITHUB_IP" >> $GITHUB_ENV
+          echo "Opening firewall for $GITHUB_IP"
           aws ec2 authorize-security-group-ingress \
-            --group-id ${{ secrets.SG_ID }} \
+            --group-id "${{ secrets.SG_ID }}" \
             --protocol tcp \
             --port 22 \
-            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+            --cidr ${GITHUB_IP}/32 || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -42,14 +41,15 @@ jobs:
             pm2 start /home/ubuntu/testing-purose/backend/app.js --name app
             echo "Backend deployed successfully!"
 
-      - name: Remove IP from Security Group
+      - name: Remove IP from Firewall
         if: always()
         run: |
+          echo "Closing firewall for $GITHUB_IP"
           aws ec2 revoke-security-group-ingress \
-            --group-id ${{ secrets.SG_ID }} \
+            --group-id "${{ secrets.SG_ID }}" \
             --protocol tcp \
             --port 22 \
-            --cidr ${{ steps.ip.outputs.ipv4 }}/32
+            --cidr ${GITHUB_IP}/32 || true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
