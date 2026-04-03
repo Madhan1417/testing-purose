@@ -3,6 +3,7 @@ name: Deploy to EC2
 on:
   push:
     branches:
+      - master
       - qa
 
 jobs:
@@ -10,6 +11,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Set Environment Variables
+        run: |
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            echo "EC2_HOST=${{ secrets.EC2_IP }}" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/home/ubuntu/testing-purose" >> $GITHUB_ENV
+            echo "PM2_APP=app" >> $GITHUB_ENV
+            echo "BRANCH=master" >> $GITHUB_ENV
+          else
+            echo "EC2_HOST=${{ secrets.QA_EC2_IP }}" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/home/ubuntu/testing-purose-qa" >> $GITHUB_ENV
+            echo "PM2_APP=qa-app" >> $GITHUB_ENV
+            echo "BRANCH=qa" >> $GITHUB_ENV
+          fi
+
       - name: Get GitHub IP and Open Firewall
         run: |
           GITHUB_IP=$(curl -s https://api.ipify.org)
@@ -28,17 +43,22 @@ jobs:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.EC2_IP }}
+          host: ${{ env.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/ubuntu/testing-purose
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            export PATH=$PATH:/usr/local/bin
+            cd ${{ env.DEPLOY_PATH }}
             git fetch origin
-            git reset --hard origin/master
-            pm2 stop app || true
-            pm2 start /home/ubuntu/testing-purose/backend/app.js --name app
+            git reset --hard origin/${{ env.BRANCH }}
+            sudo chown -R ubuntu:ubuntu ${{ env.DEPLOY_PATH }}
+            pm2 stop ${{ env.PM2_APP }} || true
+            pm2 start ${{ env.DEPLOY_PATH }}/backend/app.js --name ${{ env.PM2_APP }}
+            pm2 save
             sudo systemctl restart nginx
-            echo "Deployed successfully!"
+            echo "Deployed to ${{ env.BRANCH }} successfully!"
 
       - name: Remove IP from Firewall
         if: always()
