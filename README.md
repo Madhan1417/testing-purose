@@ -216,18 +216,8 @@ sudo chmod -R 755 /home/ubuntu
 | `/`        | Frontend (HTML page) |
 | `/backend` | Node.js API          |
 
----
 
-# 💡 Future Improvements
 
-* Add domain + DNS
-* Enable HTTPS (SSL using Let's Encrypt)
-* Use React build instead of static HTML
-* Add logging & monitoring
-* Use Docker for deployment
 
----
 
-If you want next level:
-👉 I can convert this into **professional daily report format (for manager)**
-👉 Or help you **dockerize + CI/CD pipeline setup** 🚀
+
