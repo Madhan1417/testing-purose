@@ -181,38 +181,6 @@ curl http://localhost/backend
 {"message":"Hello Backend!..."}
 ```
 
----
-
-# 🚨 Issues Faced & Fixes
-
-## ❌ Issue 1: Backend overriding frontend
-
-**Cause:**
-
-```nginx
-location / {
-    proxy_pass http://localhost:3000;
-}
-```
-
-**Fix:**
-
-* Removed proxy from `/`
-* Used `try_files` for static frontend
-
----
-
-## ❌ Issue 2: Wrong folder name
-
-**Mistake:**
-
-```
-testing-purpose ❌
-testing-purose ✅
-```
-
-**Fix:**
-
 * Corrected path in Nginx config
 
 ---
